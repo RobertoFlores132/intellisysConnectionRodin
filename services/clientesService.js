@@ -29,3 +29,28 @@ export async function obtenerClientes({ pagina = 1, cliente = null, fecha = null
     return [];
   }
 }
+
+// =======================================================
+//   🔍 NUEVO: Buscar cliente por email 
+// =======================================================
+export async function obtenerClientePorEmail(email) {
+  try {
+    // 1. Obtener la primera página (Rodin suele devolver TODO)
+    const clientes = await obtenerClientes({ pagina: 1 });
+
+    if (!clientes || clientes.length === 0) {
+      console.log("⚠️ No se recibieron clientes");
+      return null;
+    }
+
+    // 2. Hacer match exacto por correo
+    const cliente = clientes.find(
+      c => c.correo?.toLowerCase() === email.toLowerCase()
+    );
+
+    return cliente || null;
+  } catch (error) {
+    console.error("❌ Error buscando cliente por email:", error);
+    return null;
+  }
+}
