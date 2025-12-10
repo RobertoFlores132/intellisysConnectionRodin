@@ -1,4 +1,3 @@
-// server.js - actualizar la configuración CORS
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
