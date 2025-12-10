@@ -15,18 +15,18 @@ const allowedOrigins = [
   'https://admin.shopify.com',
   'https://*.admin.shopify.com',
   
-  // Todas las tiendas Shopify (cualquier subdominio .myshopify.com)
+  // Todas las tiendas Shopify
   /^https:\/\/[a-zA-Z0-9][a-zA-Z0-9-]*\.myshopify\.com$/,
   
-  // Tu tienda específica (reemplaza con tu dominio real)
-  process.env.SHOPIFY_STORE_URL,
+  // Tu tienda específica (desde variable de entorno)
+  process.env.SHOPIFY_STORE_URL, // Esto debería ser https://rodin-shop.myshopify.com
+
+  'https://rodin.mx',
   
   // Desarrollo local
   'http://localhost:3000',
   'http://localhost:9292',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:9292',
-].filter(Boolean); // Elimina valores undefined/nulos
+].filter(Boolean);
 
 const corsOptions = {
   origin: function (origin, callback) {
