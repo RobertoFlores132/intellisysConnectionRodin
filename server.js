@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import clientesRouter from "./routes/clientes.js";
+import listaPreciosRouter from "./routes/listaPrecios.js";
 
 dotenv.config();
 
@@ -90,6 +91,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // =================== ROUTES ===================
 app.use("/api", clientesRouter);
+app.use("/api", listaPreciosRouter);
 
 // =================== ENDPOINTS DE HEALTH & INFO ===================
 app.get("/api/health", (req, res) => {
@@ -109,13 +111,27 @@ app.get("/api/info", (req, res) => {
   res.json({
     name: "Rodin B2B API",
     description: "API para integración B2B con Shopify",
-    version: "1.0.0",
+    version: "1.1.0",
     author: "Intellisys Connection",
     endpoints: {
       clientes: {
         all: "GET /api/clientes",
         byEmail: "GET /api/clientes/by-email/:email",
         queryParams: "?pagina=1&cliente=ID&fecha=YYYY-MM-DD"
+      },
+      lista_precios: {
+        byCliente: "GET /api/lista-precios/cliente/:codigoCliente",
+        byEmail: "GET /api/lista-precios/email/:email",
+        search: "GET /api/lista-precios/search?cliente=CODIGO&sku=XXX&pagina=1",
+        queryParams: {
+          cliente: "Código de cliente",
+          email: "Email del cliente",
+          sku: "SKU del producto",
+          descripcion: "Texto en descripción",
+          pagina: "Número de página",
+          limite: "Items por página",
+          moneda: "Filtrar por moneda"
+        }
       },
       health: "GET /api/health"
     }
