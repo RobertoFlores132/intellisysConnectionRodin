@@ -41,12 +41,7 @@ export async function obtenerListaPreciosPorCliente(codigoCliente, options = {})
         "Authorization": `Bearer ${token}`,
         "Accept": "application/json"
       },
-      timeout: 30000,
-      // Para debug
-      transformResponse: [(data) => {
-        console.log(`📦 Respuesta RAW de Rodin:`, typeof data, data?.substring?.(0, 200));
-        return data;
-      }]
+      timeout: options.timeout || 30000,
     });
 
     console.log(`📊 Respuesta lista precios para ${codigoCliente}:`, {
