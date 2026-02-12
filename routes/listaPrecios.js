@@ -18,7 +18,6 @@ class ClienteCache {
     this.CACHE_TTL = 6 * 60 * 60 * 1000; // 6 horas (ajustable)
   }
 
-  // Obtener datos de un cliente
   get(clienteId) {
     const item = this.cache.get(clienteId);
     if (!item) return null;
@@ -29,14 +28,11 @@ class ClienteCache {
       return null;
     }
 
-    // Actualizar estadísticas
     this.updateStats(clienteId, 'hit');
     return item.data;
   }
 
-  // Guardar datos de un cliente
   set(clienteId, data) {
-    // Limpiar si el cache está lleno
     if (this.cache.size >= this.MAX_CACHE_SIZE) {
       this.cleanup();
     }
@@ -51,29 +47,24 @@ class ClienteCache {
     console.log(`💾 Cache actualizado para ${clienteId} (${this.cache.size}/${this.MAX_CACHE_SIZE} clientes)`);
   }
 
-  // Eliminar datos de un cliente
   delete(clienteId) {
     this.cache.delete(clienteId);
     console.log(`🧹 Cache eliminado para ${clienteId}`);
   }
 
-  // Limpiar cache automáticamente
   cleanup() {
-    // Estrategia: eliminar los menos usados y más antiguos
     const entries = Array.from(this.cache.entries());
     
-    // Ordenar por: 1) menos hits, 2) más antiguo
     entries.sort((a, b) => {
       const statsA = this.stats.get(a[0]) || { hits: 0 };
       const statsB = this.stats.get(b[0]) || { hits: 0 };
       
       if (statsA.hits !== statsB.hits) {
-        return statsA.hits - statsB.hits; // Menos hits primero
+        return statsA.hits - statsB.hits;
       }
-      return a[1].timestamp - b[1].timestamp; // Más antiguo primero
+      return a[1].timestamp - b[1].timestamp;
     });
 
-    // Eliminar 20% más antiguo/menos usado
     const toDelete = Math.ceil(entries.length * 0.2);
     for (let i = 0; i < toDelete; i++) {
       this.cache.delete(entries[i][0]);
@@ -82,7 +73,6 @@ class ClienteCache {
     console.log(`🧹 Limpieza automática: ${toDelete} clientes eliminados`);
   }
 
-  // Actualizar estadísticas
   updateStats(clienteId, action) {
     if (!this.stats.has(clienteId)) {
       this.stats.set(clienteId, { hits: 0, sets: 0, lastAccess: Date.now() });
@@ -95,7 +85,6 @@ class ClienteCache {
     if (action === 'set') stats.sets++;
   }
 
-  // Obtener estadísticas del cache
   getStats() {
     return {
       total_clientes: this.cache.size,
@@ -115,10 +104,6 @@ const clienteCache = new ClienteCache();
 // 1. ENDPOINT UNIVERSAL PARA TODOS LOS CLIENTES
 // ============================================
 
-/**
- * GET /api/lista-precios/completo/:codigoCliente
- * Obtener TODA la lista de precios para CUALQUIER cliente
- */
 router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
   const { codigoCliente } = req.params;
   const { 
@@ -128,9 +113,6 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
   } = req.query;
 
   try {
-    // ============================================
-    // VALIDACIONES Y LOGGING
-    // ============================================
     if (!codigoCliente || codigoCliente.trim() === "") {
       return res.status(400).json({
         error: "Código de cliente requerido",
@@ -145,9 +127,6 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
     const clienteId = codigoCliente.trim();
     const esEmail = clienteId.includes('@');
     
-    // ============================================
-    // 1. VERIFICAR CACHE (si no se fuerza actualización)
-    // ============================================
     if (fuerza_actualizacion !== "true") {
       const cachedData = clienteCache.get(clienteId);
       
@@ -173,9 +152,6 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
       console.log(`🔄 Fuerza actualización activada para ${clienteId}`);
     }
 
-    // ============================================
-    // 2. OBTENER DATOS FRESCOS DE RODIN
-    // ============================================
     console.log(`📥 Obteniendo datos frescos de Rodin para ${clienteId}...`);
     
     const startTime = Date.now();
@@ -184,15 +160,11 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
 
     try {
       if (esEmail) {
-        // Obtener por email
-        console.log(`📧 Detectado email, obteniendo por correo...`);
         listaPrecios = await obtenerListaPreciosPorEmail(clienteId, {
           timeout: parseInt(timeout),
           intentos: 2
         });
       } else {
-        // Obtener por código de cliente
-        console.log(`🏷️  Detectado código cliente, obteniendo por ID...`);
         listaPrecios = await obtenerListaPreciosPorCliente(clienteId, {
           modo: 'completo',
           timeout: parseInt(timeout),
@@ -200,7 +172,6 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
         });
       }
 
-      // Normalizar respuesta
       if (listaPrecios && Array.isArray(listaPrecios)) {
         totalProductos = listaPrecios.length;
       } else if (listaPrecios && listaPrecios.lista_precios) {
@@ -213,55 +184,13 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
 
     } catch (apiError) {
       console.error(`❌ Error API Rodin para ${clienteId}:`, apiError.message);
-      
-      // Intentar fallback: obtener solo primera página
-      try {
-        console.log(`🔄 Intentando fallback (primera página)...`);
-        
-        if (esEmail) {
-          listaPrecios = await obtenerListaPreciosPorEmail(clienteId, {
-            pagina: 1,
-            limite: 100,
-            timeout: 10000
-          });
-        } else {
-          listaPrecios = await obtenerListaPreciosPorCliente(clienteId, {
-            pagina: 1,
-            limite: 100,
-            timeout: 10000
-          });
-        }
-        
-        // Normalizar fallback
-        if (listaPrecios && listaPrecios.lista_precios) {
-          listaPrecios = listaPrecios.lista_precios;
-          totalProductos = listaPrecios.length;
-        }
-        
-        console.log(`⚠️  Fallback exitoso: ${totalProductos} productos (solo primera página)`);
-        
-      } catch (fallbackError) {
-        console.error(`❌ Fallback también falló:`, fallbackError.message);
-        throw new Error(`No se pudieron obtener precios para ${clienteId}`);
-      }
+      throw apiError;
     }
 
     const fetchTime = Date.now() - startTime;
-    
-    if (totalProductos === 0) {
-      console.warn(`⚠️  Cliente ${clienteId} tiene 0 productos en lista de precios`);
-    } else {
-      console.log(`✅ Obtenidos ${totalProductos} productos en ${fetchTime}ms`);
-    }
 
-    // ============================================
-    // 3. OPTIMIZAR DATOS PARA EL FRONTEND
-    // ============================================
-    const optimizedData = this.optimizePriceData(listaPrecios, formato);
-    
-    // ============================================
-    // 4. GUARDAR EN CACHE (si hay productos)
-    // ============================================
+    const optimizedData = optimizePriceData(listaPrecios, formato);
+
     if (totalProductos > 0) {
       const cacheData = {
         lista_precios: optimizedData.lista_precios,
@@ -279,9 +208,6 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
       clienteCache.set(clienteId, cacheData);
     }
 
-    // ============================================
-    // 5. CONSTRUIR RESPUESTA FINAL
-    // ============================================
     const response = {
       success: true,
       cliente: clienteId,
@@ -298,7 +224,7 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
           guardado_en_cache: totalProductos > 0,
           total_clientes_cacheados: clienteCache.cache.size
         },
-        recomendaciones: this.generateRecommendations(totalProductos, fetchTime)
+        recomendaciones: generateRecommendations(totalProductos, fetchTime)
       },
       paginacion: {
         tiene_paginacion: false,
@@ -307,7 +233,6 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
       }
     };
 
-    // Agregar mapa de precios si está optimizado
     if (formato === "optimizado" && optimizedData.mapa_precios) {
       response.mapa_precios = optimizedData.mapa_precios;
     }
@@ -317,25 +242,20 @@ router.get("/lista-precios/completo/:codigoCliente", async (req, res) => {
   } catch (error) {
     console.error(`❌ Error crítico para ${codigoCliente}:`, error);
     
-    // Respuesta de error detallada
     res.status(500).json({
       success: false,
       error: "Error obteniendo lista de precios",
       message: error.message,
       cliente: codigoCliente,
-      timestamp: new Date().toISOString(),
-      sugerencias: [
-        "Verifique que el cliente exista en Rodin",
-        "Intente con el email si tiene uno",
-        "Contacte al administrador si el problema persiste"
-      ]
+      timestamp: new Date().toISOString()
     });
   }
 });
 
-/**
- * Helper: Optimizar datos de precios
- */
+// ============================================
+// Helpers (SIN this.)
+// ============================================
+
 function optimizePriceData(prices, formato) {
   if (!Array.isArray(prices) || prices.length === 0) {
     return {
@@ -346,28 +266,22 @@ function optimizePriceData(prices, formato) {
     };
   }
 
-  console.log(`🛠️  Optimizando ${prices.length} productos (formato: ${formato})...`);
-  
-  const optimizaciones = [];
   const listaOptimizada = [];
   const mapaPrecios = {};
   let tieneDescuentos = false;
 
-  // PARA FORMATO OPTIMIZADO (recomendado para frontend)
   if (formato === "optimizado") {
     prices.forEach((producto, index) => {
-      // Estructura mínima para búsqueda rápida
       const itemOptimizado = {
-        s: producto.articulo || `unknown_${index}`, // SKU (short)
-        n: producto.nombre ? producto.nombre.substring(0, 80) : "", // Nombre (truncado)
-        pf: producto.precio_final || 0, // Precio final
-        pl: producto.precio_lista || 0, // Precio lista
-        d: (producto.precio_lista || 0) > (producto.precio_final || 0) // Tiene descuento
+        s: producto.articulo || `unknown_${index}`,
+        n: producto.nombre ? producto.nombre.substring(0, 80) : "",
+        pf: producto.precio_final || 0,
+        pl: producto.precio_lista || 0,
+        d: (producto.precio_lista || 0) > (producto.precio_final || 0)
       };
 
       listaOptimizada.push(itemOptimizado);
       
-      // Mapa para búsqueda O(1) por SKU
       mapaPrecios[itemOptimizado.s] = {
         precio_final: itemOptimizado.pf,
         precio_lista: itemOptimizado.pl,
@@ -376,29 +290,19 @@ function optimizePriceData(prices, formato) {
 
       if (itemOptimizado.d) tieneDescuentos = true;
     });
-
-    optimizaciones.push("compresion_nombres", "estructura_minima", "mapa_busqueda_rapida");
     
   } else {
-    // FORMATO COMPLETO (para compatibilidad)
     listaOptimizada.push(...prices);
-    optimizaciones.push("formato_completo");
   }
 
-  console.log(`✅ Optimización completada: ${listaOptimizada.length} productos`);
-  
   return {
     lista_precios: listaOptimizada,
     mapa_precios: formato === "optimizado" ? mapaPrecios : undefined,
     total_productos: listaOptimizada.length,
-    tiene_descuentos: tieneDescuentos,
-    optimizaciones: optimizaciones
+    tiene_descuentos: tieneDescuentos
   };
 }
 
-/**
- * Helper: Generar recomendaciones basadas en los datos
- */
 function generateRecommendations(totalProductos, tiempoMs) {
   const recomendaciones = [];
   
@@ -406,24 +310,14 @@ function generateRecommendations(totalProductos, tiempoMs) {
     recomendaciones.push({
       nivel: "alto",
       mensaje: `Cliente con ${totalProductos.toLocaleString()} productos`,
-      accion: "Usar carga progresiva en frontend",
-      tecnica: "Virtual scrolling + IndexedDB"
-    });
-  } else if (totalProductos > 1000) {
-    recomendaciones.push({
-      nivel: "medio", 
-      mensaje: `Cliente con ${totalProductos} productos`,
-      accion: "Cachear en IndexedDB",
-      tecnica: "Lazy loading por lotes"
+      accion: "Usar carga progresiva en frontend"
     });
   }
   
   if (tiempoMs > 5000) {
     recomendaciones.push({
       nivel: "advertencia",
-      mensaje: `Tiempo de obtención alto: ${tiempoMs}ms`,
-      accion: "Considerar paginación",
-      tecnica: "Usar endpoint paginado para carga inicial"
+      mensaje: `Tiempo de obtención alto: ${tiempoMs}ms`
     });
   }
   
@@ -431,167 +325,26 @@ function generateRecommendations(totalProductos, tiempoMs) {
 }
 
 // ============================================
-// 2. ENDPOINT PARA PRODUCTOS VISIBLES (OPTIMIZADO)
+// ESTADÍSTICAS (fix MAX_CACHE_SIZE)
 // ============================================
 
-/**
- * GET /api/lista-precios/visibles/:codigoCliente
- * Obtener precios solo para productos visibles en viewport
- */
-router.get("/lista-precios/visibles/:codigoCliente", async (req, res) => {
-  const { codigoCliente } = req.params;
-  const { skus } = req.query;
-
-  try {
-    if (!codigoCliente || !skus) {
-      return res.status(400).json({
-        error: "Código de cliente y skus requeridos"
-      });
-    }
-
-    const skuArray = skus
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
-      .slice(0, 50); // Máximo 50 SKUs
-
-    console.log(`👀 Consultando ${skuArray.length} SKUs para ${codigoCliente}`);
-
-    // 🔒 Control de concurrencia
-    const CONCURRENCY_LIMIT = 5;
-    const resultados = [];
-
-    async function procesarLote(lote) {
-      const promises = lote.map(sku =>
-        obtenerListaPreciosPorCliente(codigoCliente, { articulo: sku })
-          .then(data => {
-            if (Array.isArray(data) && data.length > 0) {
-              return data[0];
-            }
-            return null;
-          })
-          .catch(err => {
-            console.error(`❌ Error SKU ${sku}:`, err.message);
-            return null;
-          })
-      );
-
-      return Promise.all(promises);
-    }
-
-    // Dividir en lotes
-    for (let i = 0; i < skuArray.length; i += CONCURRENCY_LIMIT) {
-      const lote = skuArray.slice(i, i + CONCURRENCY_LIMIT);
-      const resultadoLote = await procesarLote(lote);
-      resultados.push(...resultadoLote.filter(Boolean));
-    }
-
-    res.json({
-      success: true,
-      cliente: codigoCliente,
-      total_solicitados: skuArray.length,
-      total_encontrados: resultados.length,
-      productos: resultados,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error("❌ Error en visibles optimizado:", error);
-    res.status(500).json({
-      error: "Error obteniendo precios visibles",
-      message: error.message
-    });
-  }
-});
-
-// ============================================
-// 3. ENDPOINT DE ESTADÍSTICAS Y MONITOREO
-// ============================================
-
-/**
- * GET /api/lista-precios/estadisticas
- * Obtener estadísticas del sistema
- */
 router.get("/lista-precios/estadisticas", async (req, res) => {
   try {
     const cacheStats = clienteCache.getStats();
     
     const estadisticas = {
-      sistema: {
-        timestamp: new Date().toISOString(),
-        uptime_minutos: Math.floor(process.uptime() / 60),
-        memoria_node_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
-      },
       cache: {
         ...cacheStats,
-        politica_limpieza: "Automática cada hora",
         ttl_horas: 6,
-        max_clientes: MAX_CACHE_SIZE
-      },
-      endpoints_activos: [
-        {
-          nombre: "completo",
-          descripcion: "Obtiene TODOS los productos de un cliente",
-          uso: "Carga inicial y cache",
-          url: "/api/lista-precios/completo/{clienteId}"
-        },
-        {
-          nombre: "visibles", 
-          descripcion: "Obtiene solo productos visibles en viewport",
-          uso: "Carga progresiva en frontend",
-          url: "/api/lista-precios/visibles/{clienteId}?skus=SKU1,SKU2"
-        },
-        {
-          nombre: "cliente (legacy)",
-          descripcion: "Endpoint original con paginación",
-          uso: "Compatibilidad",
-          url: "/api/lista-precios/cliente/{clienteId}?limite=50"
-        }
-      ],
-      recomendaciones: [
-        "Use /completo una vez por sesión por cliente",
-        "Use /visibles para carga progresiva",
-        "Configure IndexedDB en frontend para cache persistente"
-      ]
+        max_clientes: clienteCache.MAX_CACHE_SIZE
+      }
     };
 
     res.json(estadisticas);
 
   } catch (error) {
-    console.error("❌ Error obteniendo estadísticas:", error);
     res.status(500).json({
       error: "Error obteniendo estadísticas",
-      message: error.message
-    });
-  }
-});
-
-/**
- * GET /api/lista-precios/cliente/:codigoCliente (LEGACY - mantenemos compatibilidad)
- */
-router.get("/lista-precios/cliente/:codigoCliente", async (req, res) => {
-  const { codigoCliente } = req.params;
-  const { pagina = 1, limite = 50 } = req.query;
-
-  try {
-    // Llamar al endpoint nuevo con parámetros de paginación
-    const data = await obtenerListaPreciosPorCliente(codigoCliente, {
-      pagina: parseInt(pagina),
-      limite: Math.min(parseInt(limite), 200)
-    });
-
-    res.json({
-      ...data,
-      metadata: {
-        endpoint: "legacy",
-        recomendacion: "Migre al endpoint /completo para mejor rendimiento"
-      }
-    });
-
-  } catch (error) {
-    console.error(`❌ Error en cliente/${codigoCliente}:`, error);
-    res.status(500).json({
-      error: "Error obteniendo lista de precios",
       message: error.message
     });
   }
