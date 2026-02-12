@@ -440,81 +440,63 @@ function generateRecommendations(totalProductos, tiempoMs) {
  */
 router.get("/lista-precios/visibles/:codigoCliente", async (req, res) => {
   const { codigoCliente } = req.params;
-  const { skus, modo = "exacto" } = req.query;
+  const { skus } = req.query;
 
   try {
-    if (!codigoCliente) {
-      return res.status(400).json({ error: "Código de cliente requerido" });
-    }
-
-    if (!skus) {
+    if (!codigoCliente || !skus) {
       return res.status(400).json({
-        error: "Parámetro 'skus' requerido",
-        descripcion: "Lista de SKUs separados por coma que están visibles en el viewport",
-        ejemplo: "?skus=10001,10002,10003,10004"
+        error: "Código de cliente y skus requeridos"
       });
     }
 
-    console.log(`👀 [VISIBLES] Solicitando ${skus.split(',').length} SKUs visibles para ${codigoCliente}`);
-    
-    const skuArray = skus.split(',')
+    const skuArray = skus
+      .split(',')
       .map(s => s.trim())
-      .filter(s => s)
-      .slice(0, 100); // Máximo 100 SKUs por request
+      .filter(Boolean)
+      .slice(0, 50); // Máximo 50 SKUs
 
-    // 1. Intentar obtener desde cache completo primero
-    const cachedData = clienteCache.get(codigoCliente);
-    let productosEncontrados = [];
+    console.log(`👀 Consultando ${skuArray.length} SKUs para ${codigoCliente}`);
 
-    if (cachedData && cachedData.mapa_precios) {
-      // Buscar en el mapa de precios cacheado (O(1) por SKU)
-      skuArray.forEach(sku => {
-        if (cachedData.mapa_precios[sku]) {
-          productosEncontrados.push({
-            articulo: sku,
-            precio_final: cachedData.mapa_precios[sku].precio_final,
-            precio_lista: cachedData.mapa_precios[sku].precio_lista,
-            desde_cache: true
-          });
-        }
-      });
-      
-      console.log(`✅ ${productosEncontrados.length}/${skuArray.length} encontrados en cache`);
-      
-    } else {
-      // 2. Si no hay cache, buscar individualmente
-      console.log(`🔄 Cache no disponible, buscando individualmente...`);
-      
-      // Aquí iría la lógica para buscar SKUs individualmente
-      // (similar al endpoint batch anterior)
-      
-      // Por ahora, respuesta simulada
-      productosEncontrados = skuArray.map(sku => ({
-        articulo: sku,
-        precio_final: 0,
-        precio_lista: 0,
-        desde_cache: false,
-        advertencia: "Cliente no cacheado, use endpoint /completo primero"
-      }));
+    // 🔒 Control de concurrencia
+    const CONCURRENCY_LIMIT = 5;
+    const resultados = [];
+
+    async function procesarLote(lote) {
+      const promises = lote.map(sku =>
+        obtenerListaPreciosPorCliente(codigoCliente, { articulo: sku })
+          .then(data => {
+            if (Array.isArray(data) && data.length > 0) {
+              return data[0];
+            }
+            return null;
+          })
+          .catch(err => {
+            console.error(`❌ Error SKU ${sku}:`, err.message);
+            return null;
+          })
+      );
+
+      return Promise.all(promises);
+    }
+
+    // Dividir en lotes
+    for (let i = 0; i < skuArray.length; i += CONCURRENCY_LIMIT) {
+      const lote = skuArray.slice(i, i + CONCURRENCY_LIMIT);
+      const resultadoLote = await procesarLote(lote);
+      resultados.push(...resultadoLote.filter(Boolean));
     }
 
     res.json({
       success: true,
       cliente: codigoCliente,
-      skus_solicitados: skuArray.length,
-      skus_encontrados: productosEncontrados.length,
-      productos: productosEncontrados,
-      recomendacion: productosEncontrados.length < skuArray.length 
-        ? "Algunos SKUs no encontrados. Verifique los códigos o actualice cache."
-        : "Todos los SKUs encontrados exitosamente",
-      metadata: {
-        desde_cache: productosEncontrados.length > 0 && productosEncontrados[0].desde_cache,
-        timestamp: new Date().toISOString()
-      }
+      total_solicitados: skuArray.length,
+      total_encontrados: resultados.length,
+      productos: resultados,
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error(`❌ Error en visibles/${codigoCliente}:`, error);
+    console.error("❌ Error en visibles optimizado:", error);
     res.status(500).json({
       error: "Error obteniendo precios visibles",
       message: error.message
